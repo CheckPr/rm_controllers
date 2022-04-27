@@ -19,13 +19,13 @@ bool ReactionWheelController::init(hardware_interface::RobotHW* robot_hw, ros::N
 
   imu_handle_ = robot_hw->get<hardware_interface::ImuSensorInterface>()->getHandle(
       getParam(controller_nh, "imu_name", std::string("base_imu")));
-  XmlRpc::XmlRpcValue joints;
-  controller_nh.getParam("joints", joints);
-  ROS_ASSERT(joints.getType() == XmlRpc::XmlRpcValue::TypeArray);
+  XmlRpc::XmlRpcValue joint;
+  controller_nh.getParam("joint", joint);
+  ROS_ASSERT(joint.getType() == XmlRpc::XmlRpcValue::TypeString);
   hardware_interface::EffortJointInterface* effort_joint_interface =
       robot_hw->get<hardware_interface::EffortJointInterface>();
-  for (int i = 0; i < joints.size(); ++i)
-    joint_handles_.push_back(effort_joint_interface->getHandle(joints[i]));
+
+  joint_handles_.push_back(effort_joint_interface->getHandle(joint));
 
   double m_total, l, g, dt;  //  m_total and l represent the total mass and distance between the pivot point to the
                              //  center of gravity of the whole system respectively.
@@ -68,15 +68,15 @@ bool ReactionWheelController::init(hardware_interface::RobotHW* robot_hw, ros::N
   for (int i = 0; i < STATE_DIM; ++i)
   {
     ROS_ASSERT(q[i].getType() == XmlRpc::XmlRpcValue::TypeArray);
-    ROS_ASSERT(q[i].size() == STATE_DIM);
-    for (int j = 0; j < STATE_DIM; ++j)
+    ROS_ASSERT(q[i].size() == STATE_DIM - 2);
+    for (int j = 0; j == 0; ++j)
     {
       ROS_ASSERT(q[i][j].getType() == XmlRpc::XmlRpcValue::TypeDouble ||
                  q[i][j].getType() == XmlRpc::XmlRpcValue::TypeInt);
       if (q[i][j].getType() == XmlRpc::XmlRpcValue::TypeDouble)
-        q_(i, j) = static_cast<double>(q[i][j]);
+        q_(i, i) = static_cast<double>(q[i][j]);
       else if (q[i][j].getType() == XmlRpc::XmlRpcValue::TypeInt)
-        q_(i, j) = static_cast<int>(q[i][j]);
+        q_(i, i) = static_cast<int>(q[i][j]);
     }
   }
   // Check and get R
@@ -125,10 +125,10 @@ void ReactionWheelController::update(const ros::Time& time, const ros::Duration&
 {
   double pitch_rate = imu_handle_.getAngularVelocity()[1];
   double wheel_rate = 0;
-  double num_joints = static_cast<double>(joint_handles_.size());
+  double num_joint = static_cast<double>(joint_handles_.size());
   for (const auto& joint : joint_handles_)
     wheel_rate += joint.getVelocity();
-  wheel_rate /= num_joints;
+  wheel_rate /= num_joint;
 
   // TODO: simplify, add new quatToRPY
   geometry_msgs::Quaternion quat;
@@ -143,7 +143,7 @@ void ReactionWheelController::update(const ros::Time& time, const ros::Duration&
   x(1) = inertia_total_ * pitch_rate + inertia_wheel_ * wheel_rate;
   x(2) = inertia_wheel_ * (pitch_rate + wheel_rate);
   Eigen::Matrix<double, CONTROL_DIM, 1> u;
-  u = k_ * (-x) / num_joints;  // regulate to zero: K*(0 - x)
+  u = k_ * (-x) / num_joint;  // regulate to zero: K*(0 - x)
   for (auto joint : joint_handles_)
     joint.setCommand(u(0));
 }
